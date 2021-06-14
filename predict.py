@@ -9,9 +9,41 @@ import PIL
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-%matplotlib inline
-%config InlineBackend.figure_format = 'retina'
+# %matplotlib inline
+# %config InlineBackend.figure_format = 'retina'
+import sys
 
+# Basic usage: python predict.py /path/to/image checkpoint
+# Basic usage: python predict.py 'flowers/test/1/image_06743.jpg' 'checkpoint.pth'
+
+
+# ------------------------------------------------------------------
+# (0) Def Classifier and Label Mapping
+# ------------------------------------------------------------------
+
+
+class Classifier(nn.Module):
+    def __init__(self, linear0, linear1, linear2, linear3, dropout_p):
+        
+        super().__init__()
+      
+        self.fc1 = nn.Linear(linear0, linear1)
+        self.fc2 = nn.Linear(linear1, linear2)
+        self.fc3 = nn.Linear(linear2, linear3)
+      
+        self.dropout = nn.Dropout(p = dropout_p)
+  
+    def forward(self, x):
+      
+        x = self.dropout(F.relu(self.fc1(x)))
+        x = self.dropout(F.relu(self.fc2(x)))
+       
+        # Output
+        x = F.log_softmax(self.fc3(x), dim = 1)
+        return x
+
+with open('cat_to_name.json', 'r') as f:
+    cat_to_name = json.load(f)
 
 # ------------------------------------------------------------------
 # (1) Load Trained Model
@@ -35,7 +67,8 @@ dropout_p = 0.2
 model.classifier = Classifier(linear0, linear1, linear2, linear3, dropout_p)
 
 # Load Checkpoint
-checkpoint_path = 'checkpoint.pth'
+# checkpoint_path = 'checkpoint.pth'
+checkpoint_path = sys.argv[2]
 
 # wrt. CUDA availability
 if torch.cuda.is_available():
@@ -147,13 +180,36 @@ def check_sanity(label_dict, title, image_path, model, topk=5):
     plt.tight_layout()
 
 
+def check_sanity_text(label_dict, title, image_path, model, topk=5):
+    # Do prediction
+    probs, classes = predict(image_path, model, topk)
+    
+    idx_to_class = {v: k for k, v in model.class_to_idx.items()}
+    class_int_list = [idx_to_class[i] for i in classes[0].tolist()]
+    class_list = [label_dict[str(key)] for key in class_int_list]
+
+    print(f'Label: {title}')
+    for i in range(int(topk)):
+        print(f'{probs[0].tolist()[i]}: {class_list[i]}')
+
 # ------------------------------------------------------------------
 # (3) Predict and show the result.
 # ------------------------------------------------------------------
 
+# check_sanity(label_dict = cat_to_name, 
+#              title = cat_to_name['1'], 
+#              image_path = 'flowers/test/1/image_06743.jpg', 
+#              model = model, 
+#              topk = 5)
 
-check_sanity(label_dict = cat_to_name, 
-             title = cat_to_name['1'], 
-             image_path = 'flowers/test/1/image_06743.jpg', 
-             model = model, 
-             topk = 5)
+# check_sanity(label_dict = cat_to_name, 
+#              title = cat_to_name['1'], 
+#              image_path = sys.argv[1], 
+#              model = model, 
+#              topk = 5)
+
+check_sanity_text(label_dict = cat_to_name, 
+                  title = cat_to_name['1'], 
+                  image_path = sys.argv[1], 
+                  model = model, 
+                  topk = 5)

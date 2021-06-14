@@ -9,16 +9,20 @@ import PIL
 import json
 import numpy as np
 import matplotlib.pyplot as plt
-%matplotlib inline
-%config InlineBackend.figure_format = 'retina'
+# %matplotlib inline
+# %config InlineBackend.figure_format = 'retina'
+import sys
 
+# Basic usage: python train.py data_directory
+# Basic usage: python train.py 'flowers'
 
 # ------------------------------------------------------------------
 # (1) Load Data
 # ------------------------------------------------------------------
 
 
-data_dir = 'flowers'
+# data_dir = 'flowers'
+data_dir = sys.argv[1]
 
 dir_sets = {}
 
@@ -131,7 +135,7 @@ model.classifier = Classifier(linear0, linear1, linear2, linear3, dropout_p)
 
 
 # Setting for training
-epochs = 3
+epochs = 5
 lr = 0.003
 
 
