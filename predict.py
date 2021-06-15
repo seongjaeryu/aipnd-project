@@ -2,24 +2,28 @@ import torch
 from torch import nn, optim
 import torch.nn.functional as F
 from torchvision import datasets, transforms, models
-from collections import OrderedDict
-import time
-from datetime import datetime
 import PIL
 import json
 import numpy as np
-import matplotlib.pyplot as plt
-# %matplotlib inline
-# %config InlineBackend.figure_format = 'retina'
 import sys
-
-# Basic usage: python predict.py /path/to/image checkpoint
-# Basic usage: python predict.py 'flowers/test/1/image_06743.jpg' 'checkpoint.pth'
+import argparse
 
 
-# ------------------------------------------------------------------
-# (0) Def Classifier and Label Mapping
-# ------------------------------------------------------------------
+def get_args():
+    # Initialization
+    parser = argparse.ArgumentParser()
+    # Add Arguments
+    parser.add_argument('--image_path', type = str, default = 'flowers/test/1/image_06743.jpg', 
+                        help = 'path to image file for prediction(default: flowers/test/1/image_06743.jpg)')
+    parser.add_argument('--json_path', type = str, default = 'cat_to_name.json', 
+                        help = 'path to label json file(default: cat_to_name.json)')
+    parser.add_argument('--file_path', type = str, default = 'checkpoint.pth', 
+                        help = 'path to checkpoint file(default: checkpoint.pth)')
+    parser.add_argument('--topk', type = int, default = 5, 
+                        help = 'Number of Topk(default: 5)')
+    parser.add_argument('--gpu_mode', type = str, default = 'on', 
+                        help = 'To use GPU, set it as "on". Else, CPU mode.')
+    return parser.parse_args()
 
 
 class Classifier(nn.Module):
@@ -42,53 +46,29 @@ class Classifier(nn.Module):
         x = F.log_softmax(self.fc3(x), dim = 1)
         return x
 
-with open('cat_to_name.json', 'r') as f:
-    cat_to_name = json.load(f)
 
-# ------------------------------------------------------------------
-# (1) Load Trained Model
-# ------------------------------------------------------------------
-
-
-# Load Pretrained Model
-model = models.vgg16(pretrained = True)
-
-# Information for txt file
-used_model = 'vgg16'
-used_model_pretrained = 'True'
-
-# Initial Input : 25088
-#         Output: 102
-linear0 = 25088
-linear1 = 4096
-linear2 = 1024
-linear3 = 102
-dropout_p = 0.2
-model.classifier = Classifier(linear0, linear1, linear2, linear3, dropout_p)
-
-# Load Checkpoint
-# checkpoint_path = 'checkpoint.pth'
-checkpoint_path = sys.argv[2]
-
-# wrt. CUDA availability
-if torch.cuda.is_available():
-    checkpoint = torch.load(checkpoint_path)
-else:
-    checkpoint = torch.load(checkpoint_path, map_location=torch.device('cpu'))
-
-# Apply Model State Dict
-model.load_state_dict(checkpoint['state_dict'])
-
-# Apply Custom Options
-model.class_to_idx = checkpoint['class_to_idx']
-
-# Check Model
-model.eval()
+def load_cat_to_name(json_path):
+    """Load Label Name from JSON file."""
+    with open(json_path, 'r') as f:
+        cat_to_name = json.load(f)
+    return cat_to_name
 
 
-# ------------------------------------------------------------------
-# (2) Define Functions
-# ------------------------------------------------------------------
+def load_checkpoint(file_path):
+    # Load Checkpoint
+    checkpoint = torch.load(file_path)
+    # Model
+    model = checkpoint['model'] 
+    # Classifier of the model
+    model.classifier = checkpoint['classifier']
+    model.class_to_idx = checkpoint['class_to_idx']
+    model.load_state_dict(checkpoint['state_dict'])
+    # Optimizr
+    lr = checkpoint['lr']
+    optimizer = optim.Adam(model.classifier.parameters(), lr = lr)
+    optimizer.load_state_dict(checkpoint['optimizer_state'])
+    
+    return optimizer, model
 
 
 def process_image(image):
@@ -132,20 +112,21 @@ def imshow(image, ax=None, title=None):
     return ax
 
 
-def predict(image_path, model, topk=5):
+def predict(image_path, model, device, topk=5):
     ''' Predict the class (or classes) of an image using a trained deep learning model.
     '''
-    
     # TODO: Implement the code to predict the class from an image file
+    model.eval()
     image = process_image(image_path)
-    image = image.unsqueeze(0).float()
-    probs, classes = torch.exp(model.forward(image)).topk(topk, dim=1)
+    image = image.to(device).unsqueeze(0).float()
+    with torch.no_grad():
+        probs, classes = torch.exp(model.forward(image)).topk(topk, dim=1)
     return probs, classes
 
 
-def check_sanity(label_dict, title, image_path, model, topk=5):
+def check_sanity(label_dict, title, image_path, model, device, topk=5):
     # Do prediction
-    probs, classes = predict(image_path, model, topk)
+    probs, classes = predict(image_path, model, topk, device)
     
     idx_to_class = {v: k for k, v in model.class_to_idx.items()}
     class_int_list = [idx_to_class[i] for i in classes[0].tolist()]
@@ -180,7 +161,7 @@ def check_sanity(label_dict, title, image_path, model, topk=5):
     plt.tight_layout()
 
 
-def check_sanity_text(label_dict, title, image_path, model, topk=5):
+def check_sanity_text(label_dict, title, image_path, model, topk):
     # Do prediction
     probs, classes = predict(image_path, model, topk)
     
@@ -208,8 +189,68 @@ def check_sanity_text(label_dict, title, image_path, model, topk=5):
 #              model = model, 
 #              topk = 5)
 
-check_sanity_text(label_dict = cat_to_name, 
-                  title = cat_to_name['1'], 
-                  image_path = sys.argv[1], 
-                  model = model, 
-                  topk = 5)
+# check_sanity_text(label_dict = cat_to_name, 
+#                   title = cat_to_name['1'], 
+#                   image_path = sys.argv[1], 
+#                   model = model, 
+#                   topk = 5)
+
+
+def main():
+    
+    # Arg Parser
+    args = get_args()
+    file_path = args.file_path
+    json_path = args.json_path
+    image_path = args.image_path
+    topk = args.topk
+    gpu_mode = args.gpu_mode
+    
+    # Load Category Name
+    cat_to_name = load_cat_to_name(json_path)
+    
+    # Load Checkpoint
+
+    print(f'\nfile_path: {file_path}\n')
+    print(f'\nRunning   >> Checkpoint Load Function')
+    optimizer, model = load_checkpoint(file_path)
+    print(f'\nFininshed ..')
+    
+    # START TRAINING
+    # ______________
+    
+    # Define device
+    if gpu_mode == 'on':
+        print(f"\nTrying GPU mode..\n")
+        if torch.cuda.is_available():
+            device = torch.device('cuda')
+            print(f"\nGPU Available\n")
+        else:
+            device = torch.device('cpu')
+            print(f"\nGPU Not Available\n")
+    else:
+        device = torch.device('cpu')
+        
+    model.to(device)
+    print(device)
+    
+    # Predict Image
+    print(f'\nRunning   >> Predict Function')
+    probs, classes = predict(image_path, model, device, topk)
+    print(f'\nFininshed ..')
+    print(f'\nChecking  ..')
+    print(f'\nPrinting  >> probs\n')
+    print(probs)
+    print(f'\nPrinting  >> classes\n')
+    print(classes)
+    
+    print(f'\nPrinting  >> name of classes\n')
+    idx_to_class = {v: k for k, v in model.class_to_idx.items()}
+    class_int_list = [idx_to_class[i] for i in classes[0].tolist()]
+    class_list = [cat_to_name[str(key)] for key in class_int_list]
+    print(class_list)
+    print(f'\nPrinting End.\n')
+
+
+if __name__ == "__main__":
+    main()
