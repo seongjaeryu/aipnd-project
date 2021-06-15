@@ -112,10 +112,9 @@ def imshow(image, ax=None, title=None):
     return ax
 
 
-def predict(image_path, model, device, topk=5):
+def predict(image_path, model, device, topk):
     ''' Predict the class (or classes) of an image using a trained deep learning model.
     '''
-    # TODO: Implement the code to predict the class from an image file
     model.eval()
     image = process_image(image_path)
     image = image.to(device).unsqueeze(0).float()
@@ -126,7 +125,7 @@ def predict(image_path, model, device, topk=5):
 
 def check_sanity(label_dict, title, image_path, model, device, topk=5):
     # Do prediction
-    probs, classes = predict(image_path, model, topk, device)
+    probs, classes = predict(image_path, model, device, topk)
     
     idx_to_class = {v: k for k, v in model.class_to_idx.items()}
     class_int_list = [idx_to_class[i] for i in classes[0].tolist()]
@@ -216,7 +215,7 @@ def main():
     optimizer, model = load_checkpoint(file_path)
     print(f'\nFininshed ..')
     
-    # START TRAINING
+    # START Prediction
     # ______________
     
     # Define device
